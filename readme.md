@@ -1,6 +1,6 @@
-# Epiygraf Python Package
+# Epygraf Python Package
 
-The Epygraf package makes working with [Epigraf](https://epigraf.inschriften.net/) data from Python easier.
+The Epygraf package makes working with [Epigraf](https://digicademy.github.io/epigraf/) data from Python easier.
 
 ## Installation
 
