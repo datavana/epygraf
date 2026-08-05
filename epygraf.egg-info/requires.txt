@@ -1,0 +1,8 @@
+sqlalchemy>=2.0.0
+pymysql>=1.1.0
+pandas>=2.0.0
+requests>=2.0.0
+tqdm>=4.0.0
+
+[test]
+pytest>=7.0.0
