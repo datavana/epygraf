@@ -122,8 +122,13 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
     article_cols = list(dict.fromkeys(cols))
 
     # --- base cases ---------------------------------------------------------
-    base_cols = list(dict.fromkeys(id_cols + article_cols + ["project"]))
     cases = df[df["table"] == "articles"].copy()
+
+    # drop sparse link-only rows: keep the full record (the one with "modified")
+    # NOTE: done before narrowing the columns, "modified" may not be requested
+    cases = utils.dedup_rows(cases, "id", "modified")
+
+    base_cols = list(dict.fromkeys(id_cols + article_cols + ["project"]))
     cases = cases[[c for c in base_cols if c in cases.columns]]
     cases = cases.drop_duplicates()
 
@@ -133,13 +138,21 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
     # --- join projects ------------------------------------------------------
     if project_cols:
         projects = base.extract_long(df, "projects")  # prefixed "projects."
+        projects = utils.dedup_rows(projects, "projects.id", "projects.modified")
+
         wanted = [f"projects.{c}" for c in dict.fromkeys(["id"] + list(project_cols))]
         projects = projects[[c for c in wanted if c in projects.columns]].copy()
 
         if (not projects.empty and not cases.empty
                 and "projects.id" in cases.columns
                 and "projects.id" in projects.columns):
-            cases = cases.merge(projects, on="projects.id", how="left")
+            # normalise the key on both sides so 12 / 12.0 / "12" match
+            cases["_pkey"] = utils.normalize_key(cases["projects.id"])
+            projects = projects.rename(columns={"projects.id": "_pkey"})
+            projects["_pkey"] = utils.normalize_key(projects["_pkey"])
+
+            cases = cases.merge(projects, on="_pkey", how="left")
+            cases = cases.drop(columns="_pkey")
             article_cols = list(dict.fromkeys(
                 article_cols + [f"projects.{c}" for c in project_cols]
             ))
@@ -153,6 +166,7 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
 
     if extract_cols:
         its = base.extract_long(df, "items", item_type)  # prefixed "items."
+        its = utils.dedup_rows(its, "items.id", "items.modified")
 
         # normalise the foreign keys to their target table names
         renames = {
@@ -165,16 +179,22 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
 
         if property_cols:
             props = base.extract_long(df, "properties")
+            props = utils.dedup_rows(props, "properties.id", "properties.modified")
             if (not props.empty and not its.empty
                     and "properties.id" in its.columns
                     and "properties.id" in props.columns):
+                its["properties.id"] = utils.normalize_key(its["properties.id"])
+                props["properties.id"] = utils.normalize_key(props["properties.id"])
                 its = its.merge(props, on="properties.id", how="left")
 
         if section_cols:
             secs = base.extract_long(df, "sections", section_type)
+            secs = utils.dedup_rows(secs, "sections.id", "sections.modified")
             if (not secs.empty and not its.empty
                     and "sections.id" in secs.columns
                     and "sections.id" in its.columns):
+                secs["sections.id"] = utils.normalize_key(secs["sections.id"])
+                its["sections.id"] = utils.normalize_key(its["sections.id"])
                 its = secs.merge(its, on="sections.id", how="inner")
 
         keep = [c for c in ["articles.id"] + extract_cols if c in its.columns]
@@ -182,8 +202,11 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
         its = _unescape_cols(its, extract_cols)
 
         # full join on articles.id == id
-        its = its.rename(columns={"articles.id": "id"})
-        cases = cases.merge(its, on="id", how="outer")
+        if "articles.id" in its.columns:
+            its = its.rename(columns={"articles.id": "id"})
+            its["id"] = utils.normalize_key(its["id"])
+            cases["id"] = utils.normalize_key(cases["id"])
+            cases = cases.merge(its, on="id", how="outer")
 
     # --- final column order -------------------------------------------------
     ordered = [c for c in article_cols + extract_cols + id_cols

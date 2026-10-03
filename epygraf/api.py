@@ -184,45 +184,51 @@ def job_execute(job_id):
         else:
             resp = requests.post(url)
 
-        body = resp.json()
-        newresult = None
+        try:
+            body = resp.json()
+            newresult = None
 
-        # Request error
-        if resp.status_code != 200:
-            polling = False
-            error = True
-            message = body.get("error", {}).get("message", None)
+            # Request error
+            if resp.status_code != 200:
+                polling = False
+                error = True
+                message = body.get("error", {}).get("message", None)
 
-        # Job error
-        elif body.get("job", {}).get("error", False):
-            polling = False
-            error = True
-            message = body.get("job", {}).get("error", None)
+            # Job error
+            elif body.get("job", {}).get("error", False):
+                polling = False
+                error = True
+                message = body.get("job", {}).get("error", None)
 
-        # Continue
-        elif "job" in body and "nextUrl" in body["job"]:
-            polling = True
-            error = False
-            message = body.get("job", {}).get("message", None)
-            newresult = body.get("job", {}).get("result", None)
+            # Continue
+            elif "job" in body and "nextUrl" in body["job"]:
+                polling = True
+                error = False
+                message = body.get("job", {}).get("message", None)
+                newresult = body.get("job", {}).get("result", None)
 
-            delay = body.get("job", {}).get("delay", 0)
-            if (delay > 0):
-                time.sleep(1)
+                delay = body.get("job", {}).get("delay", 0)
+                if (delay > 0):
+                    time.sleep(1)
 
-            progressCurrent = body.get("job", {}).get("progress", None)
-            progressMax = body.get("job", {}).get("progressmax", -1)
-            if progressMax == -1:
-                print(f"Progress {progressCurrent}")
+                progressCurrent = body.get("job", {}).get("progress", None)
+                progressMax = body.get("job", {}).get("progressmax", -1)
+                if progressMax == -1:
+                    print(f"Progress {progressCurrent}")
+                else:
+                    print(f"Progress {progressCurrent} / {progressMax}")
+
+            # Finished
             else:
-                print(f"Progress {progressCurrent} / {progressMax}")
+                polling = False
+                error = False
+                message = body.get("message", None)
+                newresult = body.get("job", {}).get("result", None)
 
-        # Finished
-        else:
+        except Exception as e:
             polling = False
-            error = False
-            message = body.get("message", None)
-            newresult = body.get("job", {}).get("result", None)
+            error = True
+            message = f"Error parsing response: {str(e)}"
 
         # Output
         if error:
@@ -503,7 +509,6 @@ def fetch_entity(ids, params=None, db=None, silent: bool = False):
     data = to_epitable(data)
     return data
 
-
 def patch(data, database, table=None, type=None, wide=True):
     """
     Update entities in the database using the API.
@@ -525,35 +530,41 @@ def patch(data, database, table=None, type=None, wide=True):
                         If true, column names prefixed with "properties", "items", "sections", "articles"
                         and "projects" followed by a dot (e.g. `properties.id`, `properties.lemma`)
                         will be extracted and patched as additional entities.
-        :return: (dict) A dictionary containing the following keys:
+    :return: (dict) A dictionary containing the following keys:
                     polling, error, message, data, solved, downloads.
     """
-    
+
     if wide:
         data = base.wide_to_long(data)
 
-    # TODO:
+    if "id" not in data.columns:
+        raise Exception("The data does not contain an ID column.")
+
     # stopifnot(epi_is_iripath(data$id, table, type) | epi_is_id(data$id, table))
+    valid = base.is_iripath(data["id"], table, type) | base.is_id(data["id"], table)
+    if not valid.all():
+        bad = data.loc[~valid.to_numpy(), "id"].drop_duplicates().head().tolist()
+        raise Exception(f"Invalid ids, e.g. {bad}")
 
     # Reorder
-    if "id" in data.columns:
-        data = data[["id"] + [col for col in data.columns if col != "id"]]
+    data = data[["id"] + [c for c in data.columns if c != "id"]]
 
     # Remove complete empty columns
-    data = data.loc[:, data.notna().all()]
+    data = data.loc[:, data.notna().any()]
 
     # Remove rows where all values are NA
-    data = data.dropna(how="all")
+    data = data[data.notna().any(axis=1)]
 
-    if data.empty:
+    if data.empty or len(data.columns) == 0:
         raise Exception("Data is empty or contains NA values.")
 
-    if len(data.columns) == 1 and "id" in data.columns:
+    if list(data.columns) == ["id"]:
         raise Exception("Skipped, the data only contains the ID column.")
 
     print(f"Uploading {len(data)} rows.")
 
-    return job_create("articles/import", None, database, {"data": data.to_dict(orient="records")})
+    records = data.where(data.notna(), None).to_dict(orient="records")
+    return job_create("articles/import", None, database, {"data": records})
 
 def to_epitable(data: pd.DataFrame, source: dict = None) -> pd.DataFrame:
     """

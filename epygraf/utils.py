@@ -125,3 +125,55 @@ def add_missing_columns(df, cols, default=None):
         if col not in df.columns:
             df[col] = default
     return df
+
+# ---------------------------------------------------------------------------
+# Distill helpers
+# ---------------------------------------------------------------------------
+
+def dedup_rows(frame: pd.DataFrame, key: str,
+                       marker: str = "modified") -> pd.DataFrame:
+    """Reduce *frame* to one row per *key*.
+
+    RAM frames contain two kinds of rows for the same entity: sparse rows that
+    only carry the link (foreign keys) and the full record. Only the full
+    record has a ``modified`` timestamp, so rows with a non-null *marker* win.
+    If several full rows exist, the most recently modified one is kept.
+    Without a *marker* column we fall back to the row with the most values.
+    """
+    if frame.empty or key not in frame.columns:
+        return frame
+    if not frame[key].duplicated().any():
+        return frame
+
+    work = frame.reset_index(drop=True)
+    order = pd.Series(range(len(work)), index=work.index)
+
+    if marker and marker in work.columns:
+        mark = work[marker]
+        if not pd.api.types.is_datetime64_any_dtype(mark):
+            parsed = pd.to_datetime(mark, errors="coerce", utc=True)
+            if parsed.notna().any():
+                mark = parsed
+        tmp = work.assign(_has=mark.notna().astype(int), _mark=mark, _ord=order)
+        tmp = tmp.sort_values(
+            ["_has", "_mark", "_ord"],
+            ascending=[False, False, True],
+            kind="stable", na_position="last",
+        )
+    else:
+        tmp = work.assign(_filled=work.notna().sum(axis=1), _ord=order)
+        tmp = tmp.sort_values(["_filled", "_ord"],
+                              ascending=[False, True], kind="stable")
+
+    tmp = tmp.drop_duplicates(subset=key, keep="first").sort_values("_ord")
+    return tmp[list(frame.columns)].reset_index(drop=True)
+
+
+def normalize_key(s: pd.Series) -> pd.Series:
+    """Normalise a join key so that 12, 12.0 and '12' match."""
+    if pd.api.types.is_float_dtype(s) or pd.api.types.is_integer_dtype(s):
+        try:
+            return s.astype("Int64").astype("string")
+        except (TypeError, ValueError):
+            pass
+    return s.astype("string")
