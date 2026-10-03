@@ -1,4 +1,4 @@
-# fetch data from epigraf
+# Fetch data from Epigraf
 
 import epygraf as epi
 
