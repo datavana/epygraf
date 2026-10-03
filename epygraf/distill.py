@@ -91,9 +91,9 @@ def extract_untagged(xml_str: str) -> str:
 
 def articles(df: pd.DataFrame, cols=None, section_type=None,
              section_cols=None, item_type=None, item_cols=None,
-             property_cols=None) -> pd.DataFrame:
+             property_cols=None, project_cols=None) -> pd.DataFrame:
     """
-    Get articles with optionally joined section, item, and property data.
+    Get articles with optionally joined section, item, property and project data.
 
     Mirrors distill_articles() from distill.R.
 
@@ -104,6 +104,7 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
     :param item_type: Item types to join
     :param item_cols: Columns to join from items (prefixed ``items.<col>``)
     :param property_cols: Columns to join from properties (prefixed ``properties.<col>``)
+    :param project_cols: Columns to join from the project (prefixed ``projects.<col>``)
     :return: DataFrame with articles
     """
     if cols is None:
@@ -114,12 +115,36 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
         item_cols = []
     if property_cols is None:
         property_cols = []
+    if project_cols is None:
+        project_cols = []
 
-    base_cols = list(dict.fromkeys(["id", "type", "norm_iri"] + list(cols)))
+    id_cols = ["id", "type", "norm_iri"]
+    article_cols = list(dict.fromkeys(cols))
+
+    # --- base cases ---------------------------------------------------------
+    base_cols = list(dict.fromkeys(id_cols + article_cols + ["project"]))
     cases = df[df["table"] == "articles"].copy()
     cases = cases[[c for c in base_cols if c in cases.columns]]
     cases = cases.drop_duplicates()
 
+    if "project" in cases.columns:
+        cases = cases.rename(columns={"project": "projects.id"})
+
+    # --- join projects ------------------------------------------------------
+    if project_cols:
+        projects = base.extract_long(df, "projects")  # prefixed "projects."
+        wanted = [f"projects.{c}" for c in dict.fromkeys(["id"] + list(project_cols))]
+        projects = projects[[c for c in wanted if c in projects.columns]].copy()
+
+        if (not projects.empty and not cases.empty
+                and "projects.id" in cases.columns
+                and "projects.id" in projects.columns):
+            cases = cases.merge(projects, on="projects.id", how="left")
+            article_cols = list(dict.fromkeys(
+                article_cols + [f"projects.{c}" for c in project_cols]
+            ))
+
+    # --- columns extracted from sections / items / properties ---------------
     extract_cols = (
         [f"sections.{c}" for c in section_cols]
         + [f"items.{c}" for c in item_cols]
@@ -129,32 +154,43 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
     if extract_cols:
         its = base.extract_long(df, "items", item_type)  # prefixed "items."
 
+        # normalise the foreign keys to their target table names
+        renames = {
+            "items.property": "properties.id",
+            "items.sections_id": "sections.id",
+            "items.articles_id": "articles.id",
+        }
+        its = its.rename(columns={k: v for k, v in renames.items()
+                                  if k in its.columns})
+
         if property_cols:
             props = base.extract_long(df, "properties")
-            if not props.empty and not its.empty and "items.property" in its.columns:
-                its = its.merge(
-                    props, left_on="items.property", right_on="properties.id", how="left"
-                )
+            if (not props.empty and not its.empty
+                    and "properties.id" in its.columns
+                    and "properties.id" in props.columns):
+                its = its.merge(props, on="properties.id", how="left")
 
         if section_cols:
             secs = base.extract_long(df, "sections", section_type)
             if (not secs.empty and not its.empty
                     and "sections.id" in secs.columns
-                    and "items.sections_id" in its.columns):
-                its = secs.merge(
-                    its, left_on="sections.id", right_on="items.sections_id", how="inner"
-                )
+                    and "sections.id" in its.columns):
+                its = secs.merge(its, on="sections.id", how="inner")
 
-        keep = [c for c in ["items.articles_id"] + extract_cols if c in its.columns]
+        keep = [c for c in ["articles.id"] + extract_cols if c in its.columns]
         its = its[keep].copy()
         its = _unescape_cols(its, extract_cols)
 
-        cases = cases.merge(its, left_on="id", right_on="items.articles_id", how="outer")
-        ordered = [c for c in list(cols) + extract_cols + ["id", "type", "norm_iri"]
-                   if c in cases.columns]
-        cases = cases[list(dict.fromkeys(ordered))]
+        # full join on articles.id == id
+        its = its.rename(columns={"articles.id": "id"})
+        cases = cases.merge(its, on="id", how="outer")
 
-    cases = utils.move_cols_to_end(cases, ["id", "type", "norm_iri"])
+    # --- final column order -------------------------------------------------
+    ordered = [c for c in article_cols + extract_cols + id_cols
+               if c in cases.columns]
+    cases = cases[list(dict.fromkeys(ordered))]
+
+    cases = utils.move_cols_to_end(cases, id_cols)
     return cases.reset_index(drop=True)
 
 
