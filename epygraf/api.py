@@ -305,8 +305,8 @@ def table(endpoint, params=None, db=None, maxpages=1, compact=False, silent=Fals
     :return: (pandas.DataFrame) The downloaded tabular data
     """
     # If db is a list of databases, iterate and bind rows
-    if utils.is_multi_db(db):
-        db_list = utils.iter_dbs(db)
+    if utils.is_list(db):
+        db_list = utils.as_list(db)
         data = pd.DataFrame()
         for single_db in db_list:
             data = pd.concat(

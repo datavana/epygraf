@@ -1,7 +1,6 @@
 """
 Distill functions for Epigraf RAM data frames.
 
-Mirrors distill.R from the R package.
 A "RAM data frame" is the long-format DataFrame produced by db.fetch() or
 api.fetch(), containing rows for articles, sections, items, properties,
 links and footnotes identified by the ``table`` column.
@@ -15,87 +14,11 @@ import pandas as pd
 from epygraf import base, utils
 from epygraf import tree as _tree
 
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _unescape_cols(df: pd.DataFrame, cols) -> pd.DataFrame:
-    """Replace common HTML entities in selected string columns."""
-    for col in cols:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.replace("&amp;", "&", regex=False)
-            df[col] = df[col].str.replace("&x2f;", "&", regex=False)
-    return df
-
-
-def _str_as_nullable(series: pd.Series) -> pd.Series:
-    """Convert a Series to str, turning 'nan'/'None' back to pd.NA."""
-    series = series.astype(str)
-    series[series.isin({"nan", "None", "<NA>"})] = pd.NA
-    return series
-
-
-# ---------------------------------------------------------------------------
-# XML helpers  (mirrors distill.R)
-# ---------------------------------------------------------------------------
-
-def extract_segment(xml_str: str, tagid: str) -> str:
-    """
-    Extract text from XML elements that carry a given ``id`` attribute.
-
-    Mirrors extract_segment() from distill.R.
-
-    :param xml_str: XML string (item content)
-    :param tagid: The id attribute value to search for
-    :return: Semicolon-joined text content of matching elements
-    """
-    if not xml_str or not tagid:
-        return ""
-    try:
-        root = ET.fromstring(f"<root>{xml_str}</root>")
-        segments = root.findall(f'.//*[@id="{tagid}"]')
-        texts = []
-        for el in segments:
-            texts.extend(t.strip() for t in el.itertext() if t.strip())
-        return ";".join(texts)
-    except ET.ParseError:
-        return ""
-
-
-def extract_untagged(xml_str: str) -> str:
-    """
-    Extract text that is not contained inside any child element.
-
-    Mirrors extract_untagged() from distill.R.
-
-    :param xml_str: XML string
-    :return: Direct text of the root element only
-    """
-    if not xml_str:
-        return ""
-    try:
-        safe = xml_str.replace("&", "&#038;")
-        root = ET.fromstring(f"<root>{safe}</root>")
-        parts = [root.text or ""]
-        for child in root:
-            parts.append(child.tail or "")
-        return " ".join(p.strip() for p in parts if p.strip())
-    except ET.ParseError:
-        return ""
-
-
-# ---------------------------------------------------------------------------
-# Distill functions  (mirrors distill.R)
-# ---------------------------------------------------------------------------
-
 def articles(df: pd.DataFrame, cols=None, section_type=None,
              section_cols=None, item_type=None, item_cols=None,
              property_cols=None, project_cols=None) -> pd.DataFrame:
     """
     Get articles with optionally joined section, item, property and project data.
-
-    Mirrors distill_articles() from distill.R.
 
     :param df: A RAM DataFrame (from db.fetch or api.fetch)
     :param cols: Article columns to include
@@ -147,9 +70,9 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
                 and "projects.id" in cases.columns
                 and "projects.id" in projects.columns):
             # normalise the key on both sides so 12 / 12.0 / "12" match
-            cases["_pkey"] = utils.normalize_key(cases["projects.id"])
+            cases["_pkey"] = utils.as_string(cases["projects.id"])
             projects = projects.rename(columns={"projects.id": "_pkey"})
-            projects["_pkey"] = utils.normalize_key(projects["_pkey"])
+            projects["_pkey"] = utils.as_string(projects["_pkey"])
 
             cases = cases.merge(projects, on="_pkey", how="left")
             cases = cases.drop(columns="_pkey")
@@ -183,8 +106,8 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
             if (not props.empty and not its.empty
                     and "properties.id" in its.columns
                     and "properties.id" in props.columns):
-                its["properties.id"] = utils.normalize_key(its["properties.id"])
-                props["properties.id"] = utils.normalize_key(props["properties.id"])
+                its["properties.id"] = utils.as_string(its["properties.id"])
+                props["properties.id"] = utils.as_string(props["properties.id"])
                 its = its.merge(props, on="properties.id", how="left")
 
         if section_cols:
@@ -193,19 +116,19 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
             if (not secs.empty and not its.empty
                     and "sections.id" in secs.columns
                     and "sections.id" in its.columns):
-                secs["sections.id"] = utils.normalize_key(secs["sections.id"])
-                its["sections.id"] = utils.normalize_key(its["sections.id"])
+                secs["sections.id"] = utils.as_string(secs["sections.id"])
+                its["sections.id"] = utils.as_string(its["sections.id"])
                 its = secs.merge(its, on="sections.id", how="inner")
 
         keep = [c for c in ["articles.id"] + extract_cols if c in its.columns]
         its = its[keep].copy()
-        its = _unescape_cols(its, extract_cols)
+        its = utils.unescape_cols(its, extract_cols)
 
         # full join on articles.id == id
         if "articles.id" in its.columns:
             its = its.rename(columns={"articles.id": "id"})
-            its["id"] = utils.normalize_key(its["id"])
-            cases["id"] = utils.normalize_key(cases["id"])
+            its["id"] = utils.as_string(its["id"])
+            cases["id"] = utils.as_string(cases["id"])
             cases = cases.merge(its, on="id", how="outer")
 
     # --- final column order -------------------------------------------------
@@ -217,67 +140,11 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
     return cases.reset_index(drop=True)
 
 
-def items(df: pd.DataFrame, type=None, cols=None,
-          property_cols=None, article_cols=None) -> pd.DataFrame:
-    """
-    Get items with optionally joined property and article data.
-
-    Mirrors distill_items() from distill.R.
-
-    :param df: A RAM DataFrame
-    :param type: Item types to filter. ``None`` means all types.
-    :param cols: Columns returned from items
-    :param property_cols: Property columns to join (prefixed ``properties.<col>``)
-    :param article_cols: Article columns to join (prefixed ``articles.<col>``)
-    :return: DataFrame with items
-    """
-    if cols is None:
-        cols = []
-    if property_cols is None:
-        property_cols = []
-    if article_cols is None:
-        article_cols = []
-
-    its = base.extract_long(df, "items", type, prefix=False)
-    if its.empty:
-        return its
-    if "id" in its.columns:
-        its["id"] = its["id"].astype(str)
-
-    extract_cols = list(cols)
-
-    if property_cols and "property" in its.columns:
-        props = base.extract_long(df, "properties")
-        if not props.empty and "properties.id" in props.columns:
-            its["property"] = its["property"].astype(str)
-            props["properties.id"] = props["properties.id"].astype(str)
-            its = its.merge(props, left_on="property", right_on="properties.id", how="left")
-            extract_cols += [f"properties.{c}" for c in property_cols]
-
-    if article_cols:
-        arts = base.extract_long(df, "articles")
-        if not arts.empty and "articles_id" in its.columns and "articles.id" in arts.columns:
-            its["articles_id"] = its["articles_id"].astype(str)
-            arts["articles.id"] = arts["articles.id"].astype(str)
-            its = its.merge(arts, left_on="articles_id", right_on="articles.id", how="left")
-            extract_cols += [f"articles.{c}" for c in article_cols]
-
-    its = utils.add_missing_columns(its, "norm_iri")
-    final_cols = list(dict.fromkeys(
-        extract_cols + ["id", "type", "norm_iri", "articles_id", "sections_id"]
-    ))
-    final_cols = [c for c in final_cols if c in its.columns]
-    its = its[final_cols].copy()
-    its = _unescape_cols(its, extract_cols)
-    return its.reset_index(drop=True)
-
 
 def properties(df: pd.DataFrame, type=None, cols=None,
                annos: bool = False, levelup=None) -> pd.DataFrame:
     """
     Get the property tree, optionally with annotations.
-
-    Mirrors distill_properties() from distill.R.
 
     :param df: A RAM DataFrame
     :param type: Property type to filter. ``None`` means all types.
@@ -297,9 +164,9 @@ def properties(df: pd.DataFrame, type=None, cols=None,
 
     props = utils.add_missing_columns(props, ["parent_id", "articles_id"])
     if "id" in props.columns:
-        props["id"] = _str_as_nullable(props["id"])
+        props["id"] = utils.str_as_nullable(props["id"])
     if "parent_id" in props.columns:
-        props["parent_id"] = _str_as_nullable(props["parent_id"])
+        props["parent_id"] = utils.str_as_nullable(props["parent_id"])
 
     base_cols = ["lemma", "type", "norm_iri", "level", "lft", "rght", "id", "parent_id"]
     keep_cols = list(dict.fromkeys(base_cols + list(cols)))
@@ -357,13 +224,62 @@ def properties(df: pd.DataFrame, type=None, cols=None,
 
     return props.reset_index(drop=True)
 
+def items(df: pd.DataFrame, type=None, cols=None,
+          property_cols=None, article_cols=None) -> pd.DataFrame:
+    """
+    Get items with optionally joined property and article data.
+
+    :param df: A RAM DataFrame
+    :param type: Item types to filter. ``None`` means all types.
+    :param cols: Columns returned from items
+    :param property_cols: Property columns to join (prefixed ``properties.<col>``)
+    :param article_cols: Article columns to join (prefixed ``articles.<col>``)
+    :return: DataFrame with items
+    """
+    if cols is None:
+        cols = []
+    if property_cols is None:
+        property_cols = []
+    if article_cols is None:
+        article_cols = []
+
+    its = base.extract_long(df, "items", type, prefix=False)
+    if its.empty:
+        return its
+    if "id" in its.columns:
+        its["id"] = its["id"].astype(str)
+
+    extract_cols = list(cols)
+
+    if property_cols and "property" in its.columns:
+        props = base.extract_long(df, "properties")
+        if not props.empty and "properties.id" in props.columns:
+            its["property"] = its["property"].astype(str)
+            props["properties.id"] = props["properties.id"].astype(str)
+            its = its.merge(props, left_on="property", right_on="properties.id", how="left")
+            extract_cols += [f"properties.{c}" for c in property_cols]
+
+    if article_cols:
+        arts = base.extract_long(df, "articles")
+        if not arts.empty and "articles_id" in its.columns and "articles.id" in arts.columns:
+            its["articles_id"] = its["articles_id"].astype(str)
+            arts["articles.id"] = arts["articles.id"].astype(str)
+            its = its.merge(arts, left_on="articles_id", right_on="articles.id", how="left")
+            extract_cols += [f"articles.{c}" for c in article_cols]
+
+    its = utils.add_missing_columns(its, "norm_iri")
+    final_cols = list(dict.fromkeys(
+        extract_cols + ["id", "type", "norm_iri", "articles_id", "sections_id"]
+    ))
+    final_cols = [c for c in final_cols if c in its.columns]
+    its = its[final_cols].copy()
+    its = utils.unescape_cols(its, extract_cols)
+    return its.reset_index(drop=True)
 
 def links(df: pd.DataFrame, items_type=None, properties_type=None,
           cols=None, article_cols=None, level=0) -> pd.DataFrame:
     """
     Get article annotations via links.
-
-    Mirrors distill_links() from distill.R.
 
     :param df: A RAM DataFrame
     :param items_type: Item type of annotating items (``None`` means all)
@@ -497,3 +413,42 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
     final_cols = [c for c in final_cols if c in codings.columns]
     return codings[final_cols].reset_index(drop=True)
 
+def extract_segment(xml_str: str, tagid: str) -> str:
+    """
+    Extract text from XML elements that carry a given ``id`` attribute.
+
+    :param xml_str: XML string (item content)
+    :param tagid: The id attribute value to search for
+    :return: Semicolon-joined text content of matching elements
+    """
+    if not xml_str or not tagid:
+        return ""
+    try:
+        root = ET.fromstring(f"<root>{xml_str}</root>")
+        segments = root.findall(f'.//*[@id="{tagid}"]')
+        texts = []
+        for el in segments:
+            texts.extend(t.strip() for t in el.itertext() if t.strip())
+        return ";".join(texts)
+    except ET.ParseError:
+        return ""
+
+
+def extract_untagged(xml_str: str) -> str:
+    """
+    Extract text that is not contained inside any child element.
+
+    :param xml_str: XML string
+    :return: Direct text of the root element only
+    """
+    if not xml_str:
+        return ""
+    try:
+        safe = xml_str.replace("&", "&#038;")
+        root = ET.fromstring(f"<root>{safe}</root>")
+        parts = [root.text or ""]
+        for child in root:
+            parts.append(child.tail or "")
+        return " ".join(p.strip() for p in parts if p.strip())
+    except ET.ParseError:
+        return ""

@@ -6,10 +6,12 @@ Functions for Epigraf data handling.
 import re
 import pandas as pd
 
+from epygraf import utils
+
 __all__ = [
     "create_iri", "clean_irifragment", "is_iripath", "is_id", "is_prefixid",
     "is_irifragment", "iri_parent", "extract_long", "extract_wide",
-    "wide_to_long", "drop_empty_columns",
+    "wide_to_long"
 ]
 
 TABLES = ("projects", "articles", "sections", "items", "properties",
@@ -20,55 +22,6 @@ _TYPE_RE = "([a-z0-9_-]+)"
 _FRAGMENT_RE = "([a-z0-9_~-]+)"
 _NUMBER_RE = "([0-9]+)"
 
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _as_str_series(value) -> tuple[pd.Series, bool]:
-    """Coerce scalars / lists / arrays / Series to a string Series.
-
-    :return: (series, was_scalar)
-    """
-    if isinstance(value, pd.Series):
-        return value.astype("string"), False
-    if isinstance(value, pd.Index):
-        return pd.Series(value).astype("string"), False
-    if value is None or isinstance(value, str) or not hasattr(value, "__iter__"):
-        return pd.Series([value], dtype="string"), True
-    return pd.Series(list(value), dtype="string"), False
-
-
-def _detect(value, pattern: str):
-    """stringr::str_detect() with a fully anchored pattern."""
-    s, scalar = _as_str_series(value)
-    res = s.str.fullmatch(pattern).fillna(False).astype(bool)
-    return bool(res.iloc[0]) if scalar else res
-
-
-def _dedup_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """bind_rows()/concat() need unique column labels."""
-    return df.loc[:, ~df.columns.duplicated()]
-
-
-def _bind_rows(frames) -> pd.DataFrame:
-    """dplyr::bind_rows(): union of columns, order of first appearance."""
-    frames = [f for f in frames
-              if f is not None and f.shape[0] > 0 and f.shape[1] > 0]
-    if not frames:
-        return pd.DataFrame()
-    cols = list(dict.fromkeys(c for f in frames for c in f.columns))
-    frames = [_dedup_columns(f).reindex(columns=cols) for f in frames]
-    return pd.concat(frames, ignore_index=True, sort=False)
-
-
-def drop_empty_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Remove columns that contain only missing values."""
-    if df.empty:
-        return df
-    return df.loc[:, df.notna().any()]
-
-
 # ---------------------------------------------------------------------------
 # IRI creation
 # ---------------------------------------------------------------------------
@@ -77,17 +30,15 @@ def create_iri(table, type=None, fragment=None, split=False):
     """
     Create a clean IRI.
 
-    Mirrors epi_create_iri().
-
     :param table: The table name
     :param type: If None/NA, the type will be omitted.
     :param fragment: The IRI fragment that will be cleaned
     :param split: Not implemented (as in R, the split branch is disabled)
     :return: Series of IRIs (or a single string for scalar input)
     """
-    tab, s1 = _as_str_series(table)
-    typ, s2 = _as_str_series(type)
-    frg, s3 = _as_str_series(fragment)
+    tab, s1 = utils.as_str_series(table)
+    typ, s2 = utils.as_str_series(type)
+    frg, s3 = utils.as_str_series(fragment)
 
     if len(tab) == 0 or len(typ) == 0 or len(frg) == 0:
         return pd.Series([], dtype="string")
@@ -110,15 +61,13 @@ def clean_irifragment(fragment):
     Create a clean IRI fragment.
 
     Replaces all non alphanumeric characters by hyphens and lowercases.
-
-    Mirrors epi_clean_irifragment().
     """
     replacements = {
         "\u00E4": "ae", "\u00F6": "oe", "\u00FC": "ue", "\u00DF": "ss",
         "\u00E5": "aa", "\u00E6": "ae", "\u00F8": "oe",
     }
 
-    s, scalar = _as_str_series(fragment)
+    s, scalar = utils.as_str_series(fragment)
     s = s.str.lower()
     for old, new in replacements.items():
         s = s.str.replace(old, new, regex=False)
@@ -137,8 +86,6 @@ def is_iripath(iripath, table=None, type=None):
     """
     Check whether the provided values are valid IRI paths, e.g. 'items/xyz/abc'.
 
-    Mirrors epi_is_iripath().
-
     :param iripath: Values to check (scalar, list or Series)
     :param table: Restrict to that table. None allows all tables.
     :param type: Restrict to that type. None allows all types.
@@ -146,48 +93,40 @@ def is_iripath(iripath, table=None, type=None):
     """
     table = _TABLE_RE if table is None else table
     type = _TYPE_RE if type is None else type
-    return _detect(iripath, f"{table}/{type}/{_FRAGMENT_RE}")
+    return utils.str_detect(iripath, f"{table}/{type}/{_FRAGMENT_RE}")
 
 
 def is_id(ids, table=None):
     """
     Check for valid IDs prefixed with table names, e.g. 'articles-123'.
-
-    Mirrors epi_is_id().
     """
     table = _TABLE_RE if table is None else table
-    return _detect(ids, f"{table}-{_NUMBER_RE}")
+    return utils.str_detect(ids, f"{table}-{_NUMBER_RE}")
 
 
 def is_prefixid(ids, table=None, prefix=None):
     """
     Check for valid IDs with temporary prefixes, e.g. 'articles-tmp123'.
-
-    Mirrors epi_is_prefixid().
     """
     table = _TABLE_RE if table is None else table
     prefix = "[a-z]+" if prefix is None else prefix
-    return _detect(ids, f"{table}-{prefix}{_NUMBER_RE}")
+    return utils.str_detect(ids, f"{table}-{prefix}{_NUMBER_RE}")
 
 
 def is_irifragment(value):
     """
     Check whether the values are valid IRI fragments.
-
-    Mirrors epi_is_irifragment().
     """
-    return _detect(value, "[a-z0-9_~-]+")
+    return utils.str_detect(value, "[a-z0-9_~-]+")
 
 
 def iri_parent(id=None, prefix="~"):
     """
     Get the IRI fragment of an IRI path, suffixed with *prefix*.
-
-    Mirrors epi_iri_parent().
     """
     if id is None:
         return ""
-    s, scalar = _as_str_series(id)
+    s, scalar = utils.as_str_series(id)
     out = s.str.rsplit("/", n=1).str[-1] + prefix
     return out.iloc[0] if scalar else out
 
@@ -200,8 +139,6 @@ def extract_long(df: pd.DataFrame, table: str, type=None,
                  prefix: bool = True) -> pd.DataFrame:
     """
     Get RAM rows by table name.
-
-    Mirrors epi_extract_long().
 
     :param df: A RAM DataFrame
     :param table: The table name
@@ -219,7 +156,7 @@ def extract_long(df: pd.DataFrame, table: str, type=None,
         if "type" in out.columns:
             out = out[out["type"].isin(types)]
 
-    out = drop_empty_columns(out.copy())
+    out = utils.drop_empty_columns(out.copy())
     out = out.drop_duplicates()
 
     if prefix:
@@ -236,8 +173,6 @@ def extract_wide(data: pd.DataFrame, cols_prefix: str,
                  cols_keep=None) -> pd.DataFrame:
     """
     Select nested data from prefixed columns.
-
-    Mirrors epi_extract_wide().
 
     :param data: A DataFrame
     :param cols_prefix: All columns with that prefix are selected,
@@ -268,10 +203,10 @@ def extract_wide(data: pd.DataFrame, cols_prefix: str,
         return re.sub(r"\.", "_", col, count=1)
 
     out.columns = [_rename(c) for c in out.columns]
-    out = _dedup_columns(out)
+    out = utils.dedup_columns(out)
 
     out = out.drop_duplicates()                     # distinct()
-    out = drop_empty_columns(out)                   # where(~!all(is.na(.x)))
+    out = utils.drop_empty_columns(out)                   # where(~!all(is.na(.x)))
     if out.shape[1] == 0:
         return pd.DataFrame()
     out = out[out.notna().any(axis=1)]              # if_any(everything(), ~!is.na(.))
@@ -288,8 +223,6 @@ def wide_to_long(data: pd.DataFrame) -> pd.DataFrame:
     """
     Convert wide to long format.
 
-    Mirrors epi_wide_to_long().
-
     :param data: A DataFrame with the column id containing a valid IRI path.
                  Columns prefixed with "properties", "items", "sections",
                  "articles" or "projects" followed by a dot (e.g.
@@ -297,7 +230,7 @@ def wide_to_long(data: pd.DataFrame) -> pd.DataFrame:
     :return: DataFrame with all input rows and the nested entities stacked
     """
     # Extract nested rows
-    rows = _bind_rows([
+    rows = utils.bind_rows([
         extract_wide(data, "properties"),
         extract_wide(data, "projects"),
         extract_wide(data, "articles", ["projects"]),
@@ -318,12 +251,12 @@ def wide_to_long(data: pd.DataFrame) -> pd.DataFrame:
     if not extracted.empty:
         extracted.columns = [re.sub(r"\.", "_", str(c), count=1)
                              for c in extracted.columns]
-        extracted = _dedup_columns(extracted)
+        extracted = utils.dedup_columns(extracted)
 
     if rows.shape[0] == 0:
         rows = extracted
     elif extracted.shape[0] > 0 and extracted.shape[1] > 0:
-        rows = _bind_rows([rows, extracted])
+        rows = utils.bind_rows([rows, extracted])
 
     if rows.shape[0] == 0 or rows.shape[1] == 0:
         return pd.DataFrame()

@@ -456,9 +456,9 @@ def fetch(table_name: str, params=None, db=None):
     if params is None:
         params = {}
 
-    if utils.is_multi_db(db):
+    if utils.is_list(db):
         data = pd.DataFrame()
-        for single_db in utils.iter_dbs(db):
+        for single_db in utils.as_list(db):
             check.is_db(single_db)
             data = pd.concat([data, fetch(table_name, params, single_db)], ignore_index=True)
         return data

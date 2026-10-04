@@ -13,11 +13,11 @@ epi.api.setup(
 #%%
 
 df = pd.DataFrame({
-    "id": ["items/categories/moview~001~categories~genre"],
-    "articles_id": ["articles/default/movies~001"],
-    "sections.id": ["sections/categories/movies~001~categories"],
-    "sections.name" : ["Genres"],
-    "properties.id": ["properties/categories/fancygenre"],
+    "id":               ["items/categories/moview~001~categories~genre"],
+    "articles_id":      ["articles/default/movies~001"],
+    "sections.id":      ["sections/categories/movies~001~categories"],
+    "sections.name" :   ["Genres"],
+    "properties.id":    ["properties/categories/fancygenre"],
     "properties.lemma": ["Fancy Genre"]
 })
 
