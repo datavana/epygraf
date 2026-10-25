@@ -65,9 +65,17 @@ def connect(db=None):
 # ---------------------------------------------------------------------------
 
 def _is_na(value):
-    """Return True when value is None or a non-string NA."""
-    return value is None or (not isinstance(value, str) and pd.isna(value))
+    """Return True when value is None or NA. Lists and empty strings are not considered NA."""
+    if value is None:
+        return True
 
+    if pd.api.types.is_list_like(value):
+        return False
+
+    if not isinstance(value, str):
+        return pd.isna(value)
+
+    return False
 
 def _sql_literal(value):
     """Convert a Python value to a safe SQL literal string."""
