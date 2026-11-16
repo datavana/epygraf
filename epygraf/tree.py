@@ -32,24 +32,30 @@ def add_path(data: pd.DataFrame, col_id: str, col_parent_id: str,
 
     # Escape delimiter inside lemmata
     data[col_lemma] = data[col_lemma].astype(str).str.replace(delim, delim_entity, regex=False)
-    data["tree_path"] = pd.NA
+
+    # Walk the tree on a minimal (id / parent / lemma) frame. Merging the full
+    # data frame at every level copies every column (type, norm_iri, …) for the
+    # whole level and is the main source of the memory blow-up on large trees.
+    nodes = data[[col_id, col_parent_id, col_lemma]].copy()
+    # One row per node; duplicate ids would otherwise blow up the level merges
+    # into a cartesian product.
+    nodes = nodes.drop_duplicates(subset=col_id)
 
     # Root nodes have no parent
-    root_mask = data[col_parent_id].isna()
+    root_mask = nodes[col_parent_id].isna()
     current = (
-        data.loc[root_mask, [col_id, col_lemma]]
+        nodes.loc[root_mask, [col_id, col_lemma]]
         .rename(columns={col_lemma: "tree_path"})
         .copy()
     )
 
+    # Collect id -> path level by level, then map back once at the end instead
+    # of doing a chained .loc assignment on the full frame every iteration.
+    path_map = {}
     while not current.empty:
-        path_map = current.set_index(col_id)["tree_path"]
-        update_mask = data[col_id].isin(current[col_id])
-        data.loc[update_mask, "tree_path"] = (
-            data.loc[update_mask, col_id].map(path_map).values
-        )
+        path_map.update(dict(zip(current[col_id], current["tree_path"])))
 
-        children = data.merge(
+        children = nodes.merge(
             current.rename(columns={col_id: "_par_id", "tree_path": "_par_path"}),
             left_on=col_parent_id, right_on="_par_id", how="inner",
         )
@@ -58,6 +64,7 @@ def add_path(data: pd.DataFrame, col_id: str, col_parent_id: str,
         children["tree_path"] = children["_par_path"] + f" {delim} " + children[col_lemma]
         current = children[[col_id, "tree_path"]].copy()
 
+    data["tree_path"] = data[col_id].map(path_map)
     return data
 
 
@@ -66,8 +73,13 @@ def stack_ancestors(data: pd.DataFrame, col_id: str, col_parent: str,
     """
     For each node, add a separate row for every ancestor.
 
-    The result contains each original row duplicated once per ancestor
-    (including the node itself).  ``col_stack`` holds the ancestor ID.
+    The result contains each node duplicated once per ancestor (including the
+    node itself).  ``col_stack`` holds the ancestor ID.
+
+    Only ``col_id`` and ``col_stack`` are returned: the traversal runs on a
+    minimal two-column frame so that wide inputs (e.g. the full property frame)
+    are not copied through every tree level.  Callers that need the node's own
+    columns can re-join them on ``col_id`` afterwards.
 
     Mirrors tree_stack_ancestors() from trees.R.
 
@@ -75,38 +87,35 @@ def stack_ancestors(data: pd.DataFrame, col_id: str, col_parent: str,
     :param col_id: ID column name
     :param col_parent: Parent ID column name
     :param col_stack: Column name for the ancestor IDs
-    :return: Expanded DataFrame
+    :return: Expanded DataFrame with columns [col_id, col_stack]
     """
-    data = data.copy()
-    data["_tree_id"] = data[col_id]
-    data["_tree_parent"] = data[col_parent]
+    nodes = data[[col_id, col_parent]].copy()
+    nodes = nodes.drop_duplicates(subset=col_id)
 
-    data_stacked = data.copy()
-    data_stacked["_tree_main"] = data_stacked["_tree_id"]
-
-    data_parents = data[data["_tree_parent"].notna()].copy()
-    data_parents["_tree_main"] = data_parents["_tree_parent"]
-
-    parent_ref = data[["_tree_id", "_tree_parent"]].rename(
-        columns={"_tree_id": "_ref_id", "_tree_parent": "_tree_main_new"}
+    # id -> parent lookup used to step a frontier one level up
+    parent_ref = nodes.rename(
+        columns={col_id: "_ref_id", col_parent: "_ref_parent"}
     )
 
-    while not data_parents.empty:
-        data_stacked = pd.concat([data_stacked, data_parents], ignore_index=True)
-        merged = data_parents.merge(
-            parent_ref, left_on="_tree_main", right_on="_ref_id", how="inner"
-        )
-        merged = merged[merged["_tree_main_new"].notna()]
-        if merged.empty:
-            break
-        merged = merged.copy()
-        merged["_tree_main"] = merged["_tree_main_new"]
-        data_parents = merged.drop(
-            columns=[c for c in ["_tree_main_new", "_ref_id"] if c in merged.columns]
-        )
+    # Level 0: every node is its own ancestor.
+    frontier = nodes[[col_id]].copy()
+    frontier[col_stack] = frontier[col_id]
+    parts = [frontier]
 
-    result = data_stacked.drop(columns=["_tree_id", "_tree_parent"])
-    return result.rename(columns={"_tree_main": col_stack}).reset_index(drop=True)
+    while not frontier.empty:
+        # Step each (node, ancestor) pair up to (node, ancestor's parent).
+        frontier = frontier.merge(
+            parent_ref, left_on=col_stack, right_on="_ref_id", how="inner"
+        )
+        frontier = frontier[frontier["_ref_parent"].notna()]
+        if frontier.empty:
+            break
+        frontier[col_stack] = frontier["_ref_parent"]
+        frontier = frontier[[col_id, col_stack]]
+        parts.append(frontier)
+
+    # Concat once at the end instead of growing the frame in every iteration.
+    return pd.concat(parts, ignore_index=True)
 
 
 def add_level(data: pd.DataFrame, col_id: str, col_parent: str,
@@ -184,6 +193,14 @@ def add_ancestor(data: pd.DataFrame, col_id: str, col_parent_id: str,
     level_nodes = target[target["tree_level"] == level][[col_id, col_path]].copy()
     level_nodes.columns = ["ancestor_id", "ancestor_path"]
 
-    stacked = stack_ancestors(data.drop_duplicates(), col_id, col_parent_id, "ancestor_id")
-    return stacked.merge(level_nodes, on="ancestor_id", how="inner")
+    # Minimal (node -> ancestor) pairs, filtered to the target level, then the
+    # node's own columns are reattached once. This avoids materialising the
+    # full-width frame once per ancestor.
+    pairs = stack_ancestors(
+        data[[col_id, col_parent_id]].drop_duplicates(),
+        col_id, col_parent_id, "ancestor_id",
+    )
+    pairs = pairs.merge(level_nodes, on="ancestor_id", how="inner")
+
+    return data.merge(pairs, on=col_id, how="inner")
 

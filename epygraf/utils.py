@@ -120,11 +120,11 @@ def unescape_cols(df, cols, strip_tags=False):
 def drop_empty_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Remove columns that contain only missing values."""
 
-    #return df.dropna(axis=1, how='all')
-
     if df.empty:
         return df
-    return df.loc[:, df.notna().any()]
+    # dropna(axis=1, how="all") drops exactly the columns that are all-NA
+    # without materialising a full-width boolean frame (df.notna() is n×m).
+    return df.dropna(axis=1, how="all")
 
 def add_missing_columns(df, cols, default=None):
     """

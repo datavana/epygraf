@@ -167,6 +167,11 @@ def properties(df: pd.DataFrame, type=None, cols=None,
         warnings.warn(f"No property data with type '{type}' found.", stacklevel=2)
         return props
 
+    # Collapse sparse link-only rows and the full record to one row per
+    # property. RAM frames contain both, and duplicate ids make the level-wise
+    # merge in tree.add_path() explode (cartesian growth) and balloon memory.
+    props = utils.dedup_rows(props, "id", "modified")
+
     props = utils.add_missing_columns(props, ["parent_id", "articles_id"])
     if "id" in props.columns:
         props["id"] = utils.str_as_nullable(props["id"])

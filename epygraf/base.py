@@ -123,12 +123,17 @@ def is_irifragment(value):
 def iri_parent(id=None, prefix="~"):
     """
     Get the IRI fragment of an IRI path, suffixed with *prefix*.
+
+    :param id: An IRI path (scalar or iterable of paths)
+    :param prefix: Suffix appended to the fragment
+    :return: The suffixed fragment(s): a string for scalar input, a list for
+             iterable input
     """
     if id is None:
         return ""
     s, scalar = utils.as_str_series(id)
     out = s.str.rsplit("/", n=1).str[-1] + prefix
-    return out.iloc[0] if scalar else out
+    return out.iloc[0] if scalar else out.tolist()
 
 
 # ---------------------------------------------------------------------------
