@@ -51,6 +51,11 @@ def articles(df: pd.DataFrame, cols=None, section_type=None,
     # NOTE: done before narrowing the columns, "modified" may not be requested
     cases = utils.dedup_rows(cases, "id", "modified")
 
+    # Convert ID columns to nullable integer type
+    for col in cases.columns:
+        if col == "id" or col.endswith("_id") or col.endswith(".id"):
+            cases[col] = utils.str_as_nullable(cases[col])
+
     base_cols = list(dict.fromkeys(id_cols + article_cols + ["project"]))
     cases = cases[[c for c in base_cols if c in cases.columns]]
     cases = cases.drop_duplicates()
@@ -195,8 +200,10 @@ def properties(df: pd.DataFrame, type=None, cols=None,
         anno_items = items(df, None, cols=["property"])
         if not anno_items.empty:
             anno_items["items_id"] = anno_items["id"]
-            anno_cols = [c for c in ["property", "articles_id", "sections_id", "items_id"]
-                         if c in anno_items.columns]
+            anno_cols = [
+                c for c in ["property", "articles_id", "sections_id", "items_id"]
+                if c in anno_items.columns
+            ]
             anno_items = anno_items[anno_cols].dropna()
             if not anno_items.empty and "id" in props.columns:
                 anno_items = props.merge(anno_items, left_on="id", right_on="property", how="inner")
@@ -248,7 +255,8 @@ def items(df: pd.DataFrame, type=None, cols=None,
         return its
     if "id" in its.columns:
         its["id"] = its["id"].astype(str)
-
+    if "property" in its.columns:
+        its["property"] = its["property"].astype(str)
     extract_cols = list(cols)
 
     if property_cols and "property" in its.columns:

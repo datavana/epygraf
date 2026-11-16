@@ -140,6 +140,8 @@ def extract_long(df: pd.DataFrame, table: str, type=None,
     """
     Get RAM rows by table name.
 
+    ID columns will always be converted to strings.
+
     :param df: A RAM DataFrame
     :param table: The table name
     :param type: Filter by type: a single value or a list of values
@@ -158,6 +160,11 @@ def extract_long(df: pd.DataFrame, table: str, type=None,
 
     out = utils.drop_empty_columns(out.copy())
     out = out.drop_duplicates()
+
+    # Convert ID columns to nullable integer type
+    for col in out.columns:
+        if col == "id" or col.endswith("_id") or col.endswith(".id"):
+            out[col] = utils.str_as_nullable(out[col])
 
     if prefix:
         out.columns = [f"{table}.{c}" for c in out.columns]

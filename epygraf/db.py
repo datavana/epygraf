@@ -119,11 +119,11 @@ def _cond_to_filter(cond):
     return clauses
 
 
-def table(table, cond=None, db=None, deleted=False, compact=False):
+def table(table_name, cond=None, db=None, deleted=False, compact=False):
     """
     Retrieve data from a table.
 
-    :param table: (str) The table name.
+    :param table_name: (str) The table name.
     :param cond: (dict, list, str, or None) Filter conditions.
                  Pass a dict of {field: value(s)} for named conditions (like R's named list),
                  a list of raw SQL condition strings, or a single SQL condition string.
@@ -133,15 +133,15 @@ def table(table, cond=None, db=None, deleted=False, compact=False):
                If None, uses the database name from the settings.
     :param deleted: (bool) Include deleted records. Default is False.
     :param compact: (bool) Whether to add `table` and `database` columns and normalise
-                   the type column to `type`. Mirrors the compact parameter in db_table() from db.R.
+                   the type column to `type`.
     :return: pandas.DataFrame
     """
-    # If db is a list of databases, iterate and bind (mirrors R db_table multi-db)
+    # If db is a list of databases, iterate and bind
     if not isinstance(db, pymysql.connections.Connection) and not isinstance(db, str) and \
             db is not None and hasattr(db, "__len__") and len(db) > 1:
         frames = []
         for single_db in (db.tolist() if hasattr(db, "tolist") else list(db)):
-            frames.append(table(table, cond=cond, db=single_db, deleted=deleted, compact=True))
+            frames.append(table(table_name, cond=cond, db=single_db, deleted=deleted, compact=True))
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
     # Get database connection
@@ -153,14 +153,14 @@ def table(table, cond=None, db=None, deleted=False, compact=False):
     cursor = con.cursor(cursors.DictCursor)
 
     # Construct SQL expression
-    sql = f"SELECT * FROM {table}"
+    sql = f"SELECT * FROM {table_name}"
 
     # Build conditions list
     filter_clauses = _cond_to_filter(cond) or []
 
     # Add deleted = 0 condition
     if not deleted:
-        filter_clauses = [f"{table}.deleted = 0"] + list(filter_clauses)
+        filter_clauses = [f"{table_name}.deleted = 0"] + list(filter_clauses)
 
     # Convert to SQL string
     if filter_clauses:
@@ -179,10 +179,15 @@ def table(table, cond=None, db=None, deleted=False, compact=False):
     if not isinstance(db, pymysql.connections.Connection):
         con.close()
 
+    # Convert ID columns to nullable integer type
+    for col in result.columns:
+        if col == "id" or col.endswith("_id"):
+            result[col] = pd.to_numeric(result[col], errors="coerce").astype("Int64")
+
     # Compact: add table/database columns and normalise type column name
     if compact and not result.empty:
         result = result.copy()
-        result["table"] = table
+        result["table"] = table_name
         if isinstance(db, str):
             result["database"] = db
         type_cols = [col for col in result.columns if re.match(r"^[a-z]+type$", col)]
