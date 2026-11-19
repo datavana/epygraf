@@ -1,8 +1,8 @@
 from epygraf import base
 
 
-def test_extract_long_prefixes_columns(synthetic_ram):
-    arts = base.extract_long(synthetic_ram, "articles")
+def test_extract_long_prefixes_columns(example_article):
+    arts = base.extract_long(example_article, "articles")
     assert "articles.id" in arts.columns
 
 

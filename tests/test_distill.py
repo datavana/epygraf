@@ -4,97 +4,52 @@ import pytest
 from epygraf import distill
 
 
-@pytest.fixture
-def property_tree_ram():
-    """RAM with a 3-level 'topics' tree plus two links annotating a leaf.
-
-    The properties deliberately carry no ``level`` column, so ``links()`` has
-    to derive the tree depth itself.
-    """
-    rows = [
-        {"table": "properties", "type": "topics", "id": "properties-1",
-         "parent_id": None, "lemma": "Root", "norm_iri": "root",
-         "lft": 1, "rght": 10, "modified": "2024-01-01"},
-        {"table": "properties", "type": "topics", "id": "properties-2",
-         "parent_id": "properties-1", "lemma": "A", "norm_iri": "a",
-         "lft": 2, "rght": 7, "modified": "2024-01-01"},
-        {"table": "properties", "type": "topics", "id": "properties-3",
-         "parent_id": "properties-1", "lemma": "B", "norm_iri": "b",
-         "lft": 8, "rght": 9, "modified": "2024-01-01"},
-        {"table": "properties", "type": "topics", "id": "properties-4",
-         "parent_id": "properties-2", "lemma": "A1", "norm_iri": "a1",
-         "lft": 3, "rght": 4, "modified": "2024-01-01"},
-        {"table": "properties", "type": "topics", "id": "properties-5",
-         "parent_id": "properties-2", "lemma": "A2", "norm_iri": "a2",
-         "lft": 5, "rght": 6, "modified": "2024-01-01"},
-        {"table": "articles", "type": "default", "id": "articles-1",
-         "norm_iri": "art1", "name": "Art"},
-        {"table": "sections", "type": "text", "id": "sections-1",
-         "articles_id": "articles-1"},
-        {"table": "items", "type": "text", "id": "items-1",
-         "articles_id": "articles-1", "sections_id": "sections-1",
-         "property": "properties-999", "content": '<seg id="s1">Anna</seg>'},
-        {"table": "items", "type": "text", "id": "items-2",
-         "articles_id": "articles-1", "sections_id": "sections-1",
-         "property": "properties-999", "content": '<seg id="s1">Bernd</seg>'},
-        {"table": "links", "type": None, "id": "links-1",
-         "root_tab": "articles", "root_id": "articles-1",
-         "from_tab": "items", "from_id": "items-1", "from_tagid": "s1",
-         "to_tab": "properties", "to_id": "properties-4"},
-        {"table": "links", "type": None, "id": "links-2",
-         "root_tab": "articles", "root_id": "articles-1",
-         "from_tab": "items", "from_id": "items-2", "from_tagid": "s1",
-         "to_tab": "properties", "to_id": "properties-4"},
-    ]
-    return pd.DataFrame(rows)
-
-
 # --- articles ---------------------------------------------------------------
 
-def test_articles_returns_expected_columns(synthetic_ram):
-    data = distill.articles(synthetic_ram, cols=["name"])
+def test_articles_returns_expected_columns(example_article):
+    data = distill.articles(example_article, cols=["name"])
     assert "name" in data.columns
     assert "id" in data.columns
 
 
 # --- items ------------------------------------------------------------------
 
-def test_items_joins_property_columns(synthetic_ram):
-    data = distill.items(synthetic_ram, cols=["content"], property_cols=["lemma"])
+def test_items_joins_property_columns(example_article):
+    data = distill.items(example_article, cols=["content"], property_cols=["lemma"])
     assert "content" in data.columns
     assert "properties.lemma" in data.columns
 
 
 # --- properties -------------------------------------------------------------
 
-def test_properties_builds_path(synthetic_ram):
-    props = distill.properties(synthetic_ram, type="topics")
+def test_properties_builds_path(example_article):
+    props = distill.properties(example_article, type="topics")
     assert "path" in props.columns
     assert len(props) == 1
 
 
-def test_properties_builds_full_path(property_tree_ram):
-    props = distill.properties(property_tree_ram, type="topics")
+def test_properties_builds_full_path(example_properties):
+    props = distill.properties(example_properties, type="topics")
     paths = props.set_index("id")["path"]
     assert paths["properties-1"] == "Root"
     assert paths["properties-4"] == "Root / A / A1"
 
 
-def test_properties_dedups_sparse_and_full_rows(property_tree_ram):
+def test_properties_dedups_sparse_and_full_rows(example_properties):
     # append a sparse link-only duplicate of A1 (no lemma/norm_iri/modified)
-    sparse = property_tree_ram[property_tree_ram["id"] == "properties-4"].iloc[[0]].copy()
+    sparse = example_properties[example_properties["id"] == "properties-4"].iloc[[0]].copy()
     sparse["lemma"] = None
     sparse["norm_iri"] = None
     sparse["modified"] = None
-    ram = pd.concat([property_tree_ram, sparse], ignore_index=True)
+    ram = pd.concat([example_properties, sparse], ignore_index=True)
 
     props = distill.properties(ram, type="topics")
     assert props["id"].tolist().count("properties-4") == 1
     assert len(props) == 5
 
 
-def test_properties_levelup_adds_ancestor(property_tree_ram):
-    props = distill.properties(property_tree_ram, type="topics", levelup=1)
+def test_properties_levelup_adds_ancestor(example_properties):
+    props = distill.properties(example_properties, type="topics", levelup=1)
     by_id = props.set_index("id")
 
     assert by_id.loc["properties-4", "ancestor_id"] == "properties-2"
@@ -103,8 +58,8 @@ def test_properties_levelup_adds_ancestor(property_tree_ram):
     assert "properties-1" not in props["id"].tolist()
 
 
-def test_properties_annos_one_row_per_annotation(property_tree_ram):
-    props = distill.properties(property_tree_ram, type="topics", annos=True)
+def test_properties_annos_one_row_per_annotation(example_properties):
+    props = distill.properties(example_properties, type="topics", annos=True)
 
     # A1 is targeted by two links -> two annotation rows (no cartesian product)
     assert props["id"].tolist().count("properties-4") == 2
@@ -114,21 +69,21 @@ def test_properties_annos_one_row_per_annotation(property_tree_ram):
 
 # --- links ------------------------------------------------------------------
 
-def test_links_returns_annotation_rows(synthetic_ram):
-    links = distill.links(synthetic_ram, properties_type="topics")
+def test_links_returns_annotation_rows(example_article):
+    links = distill.links(example_article, properties_type="topics")
     assert "to_id" in links.columns
     assert len(links) == 1
 
 
-def test_links_returns_one_row_per_link(property_tree_ram):
-    links = distill.links(property_tree_ram, properties_type="topics", cols=["segment"])
+def test_links_returns_one_row_per_link(example_properties):
+    links = distill.links(example_properties, properties_type="topics", cols=["segment"])
     # two links, not (depth+1)^2 = 9 rows per link
     assert len(links) == 2
     assert "to_id" in links.columns
     assert "segment" in links.columns
 
 
-def test_links_respects_aggregation_level(property_tree_ram):
+def test_links_respects_aggregation_level(example_properties):
     expected = {
         0: "Root",
         1: "Root / A",
@@ -136,7 +91,7 @@ def test_links_respects_aggregation_level(property_tree_ram):
         None: "Root / A / A1",
     }
     for level, path in expected.items():
-        out = distill.links(property_tree_ram, properties_type="topics",
+        out = distill.links(example_properties, properties_type="topics",
                             cols=["path"], level=level)
         assert len(out) == 2
         assert set(out["path"].tolist()) == {path}

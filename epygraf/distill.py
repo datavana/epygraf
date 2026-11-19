@@ -400,13 +400,13 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
             )
             if {"from_tagid", "content"}.issubset(segs.columns):
                 segs["item_iri"] = segs.get("norm_iri", pd.NA)
-                segs["segment"] = segs.apply(
-                    lambda row: extract_segment(
-                        row.get("content", "") or "",
-                        row.get("from_tagid", "") or "",
-                    ),
-                    axis=1,
-                )
+                # List comprehension instead of DataFrame.apply(axis=1): the
+                # latter goes through pandas' generic row machinery and, combined
+                # with one ElementTree parse per row, dominates the runtime.
+                segs["segment"] = [
+                    extract_segment(c, t)
+                    for c, t in zip(segs["content"], segs["from_tagid"])
+                ]
                 seg_keep = [c for c in
                             ["items_id", "sections_id", "articles_id",
                              "from_tagid", "content", "item_iri", "segment"]
@@ -444,10 +444,12 @@ def extract_segment(xml_str: str, tagid: str) -> str:
         return ""
     try:
         root = ET.fromstring(f"<root>{xml_str}</root>")
-        segments = root.findall(f'.//*[@id="{tagid}"]')
+        # A direct element scan is much faster than an XPath findall(), which
+        # re-parses the path on every call.
         texts = []
-        for el in segments:
-            texts.extend(t.strip() for t in el.itertext() if t.strip())
+        for el in root.iter():
+            if el.get("id") == tagid:
+                texts.extend(t.strip() for t in el.itertext() if t.strip())
         return ";".join(texts)
     except ET.ParseError:
         return ""
