@@ -178,13 +178,22 @@ def properties(df: pd.DataFrame, type=None, cols=None,
     if "parent_id" in props.columns:
         props["parent_id"] = utils.str_as_nullable(props["parent_id"])
 
+
+    sortcol = "id"
+    if "lft" in props.columns:
+        props = props.sort_values("lft")
+        sortcol = "lft"
+
+    if "level" not in props.columns:
+        props = _tree.add_level(props, "id", "parent_id", col_sort=sortcol)
+        props = props.drop(columns=["tree_order","tree_thread"]).reset_index(drop=True)
+        props = props.rename(columns={"tree_level": "level"})
+
     base_cols = ["lemma", "type", "norm_iri", "level", "lft", "rght", "id", "parent_id"]
     keep_cols = list(dict.fromkeys(base_cols + list(cols)))
     keep_cols = [c for c in keep_cols if c in props.columns]
     props = props[keep_cols].copy()
 
-    if "lft" in props.columns:
-        props = props.sort_values("lft")
 
     if {"id", "parent_id", "lemma"}.issubset(props.columns):
         props = _tree.add_path(props, "id", "parent_id", "lemma")
@@ -320,18 +329,6 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
     if "id" in codes.columns:
         codes["id"] = codes["id"].astype(str)
 
-    ancestors = _tree.stack_ancestors(
-        codes[["id", "parent_id"]].drop_duplicates(), "id", "parent_id", "anc_id"
-    ).drop_duplicates()
-
-    if level is None:
-        codes_level = codes.copy()
-        effective_level = int(codes["level"].max()) if "level" in codes.columns else 0
-    else:
-        effective_level = level
-        codes_level = (codes[codes["level"] == level].copy()
-                       if "level" in codes.columns else codes.copy())
-
     lnks = base.extract_long(df, "links", prefix=False)
     if lnks.empty:
         return pd.DataFrame()
@@ -352,20 +349,24 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
 
     link_cols = [c for c in id_cols if c in lnks.columns]
     codings = lnks[link_cols].drop_duplicates()
-    codings = codings.merge(ancestors, left_on="to_id", right_on="id", how="left")
 
-    path_col = "path" if "path" in codes_level.columns else None
+    path_col = "path" if "path" in codes.columns else None
     if path_col is None:
         return pd.DataFrame()
 
-    codings = (
-        codings
-        .merge(
-            codes_level[["id", path_col]].rename(columns={"id": "_cid"}),
-            left_on="anc_id", right_on="_cid", how="inner",
+    if level is None:
+        codes_level = codes[["id", path_col]].copy().drop_duplicates()
+        effective_level = int(codes["level"].max()) if "level" in codes.columns else 0
+        codings = codings.merge(codes_level, left_on="to_id", right_on="id", how="left")
+    else:
+        effective_level = level
+        ancestors = _tree.stack_ancestors(
+            codes[["id", "parent_id"]].drop_duplicates(), "id", "parent_id", "anc_id"
         )
-        .drop(columns=["_cid"])
-    )
+        codes = codes[codes["level"] == level][["id", path_col]]
+        codings = codings.merge(ancestors, left_on="to_id", right_on="id", how="left")
+        codings = codings.merge(codes, left_on="anc_id", right_on = "id", how="inner")
+
     codings = codings[link_cols + [path_col]].drop_duplicates()
     codings = codings.merge(cases, left_on="root_id", right_on="id", how="left")
     codings = codings.drop(columns=[c for c in ["id"] if c in codings.columns])
@@ -380,7 +381,9 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
             split[col] = split[col].str.replace("&x2f;", "&", regex=False)
         codings = pd.concat([codings.reset_index(drop=True), split], axis=1)
 
-    # Extract text segments from items
+    # Extract text segments from items. A segment depends only on the item and
+    # tag id, so build one row per (item, tagid) and join it back; joining on
+    # the ancestor-expanded frame instead multiplies rows (cartesian product).
     segments_src = base.extract_long(df, "items", items_type, prefix=False)
     if not segments_src.empty:
         segments_src["items_id"] = segments_src["id"]
@@ -391,7 +394,10 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
             segs[col] = segs[col].astype(str)
 
         if "from_id" in codings.columns and "items_id" in segs.columns:
-            segs = segs.merge(codings, left_on="items_id", right_on="from_id", how="inner")
+            segs = segs.merge(
+                codings[["from_id", "from_tagid"]].drop_duplicates(),
+                left_on="items_id", right_on="from_id", how="inner",
+            )
             if {"from_tagid", "content"}.issubset(segs.columns):
                 segs["item_iri"] = segs.get("norm_iri", pd.NA)
                 segs["segment"] = segs.apply(
