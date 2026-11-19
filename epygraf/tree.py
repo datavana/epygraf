@@ -1,7 +1,5 @@
 """
 Tree helper functions for hierarchical data.
-
-Mirrors trees.R from the R package.
 """
 
 import pandas as pd
@@ -17,8 +15,6 @@ def add_path(data: pd.DataFrame, col_id: str, col_parent_id: str,
     The path is built by concatenating all col_lemma values up to the root.
     Existing delimiters inside lemmata are escaped as ``&x<hex>;``
     (e.g. ``/`` becomes ``&x2f;``).
-
-    Mirrors tree_add_path() from trees.R.
 
     :param data: DataFrame with hierarchical data
     :param col_id: ID column name
@@ -81,8 +77,6 @@ def stack_ancestors(data: pd.DataFrame, col_id: str, col_parent: str,
     are not copied through every tree level.  Callers that need the node's own
     columns can re-join them on ``col_id`` afterwards.
 
-    Mirrors tree_stack_ancestors() from trees.R.
-
     :param data: DataFrame with all nodes
     :param col_id: ID column name
     :param col_parent: Parent ID column name
@@ -122,8 +116,6 @@ def add_level(data: pd.DataFrame, col_id: str, col_parent: str,
               col_sort: str = None) -> pd.DataFrame:
     """
     Add level, thread, and order columns.
-
-    Mirrors tree_add_level() from trees.R.
 
     :param data: DataFrame with hierarchical data
     :param col_id: ID column name
@@ -178,7 +170,7 @@ def add_ancestor(data: pd.DataFrame, col_id: str, col_parent_id: str,
     """
     Add ancestor id and path from a specific level to all descendants.
 
-    Mirrors tree_add_ancestor() from trees.R.
+    Note that nodes with lower levels than the target level are dropped, as they have no ancestor at that level.
 
     :param data: DataFrame with hierarchical data
     :param col_id: ID column name

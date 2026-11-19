@@ -18,50 +18,89 @@ def test_escape_delimiter():
 
     result = tree.add_path(data, "id", "parent_id", "lemma")
 
-    assert result.set_index("id")["tree_path"]["1"] == "A&x2f;B"
+    expected = pd.DataFrame(
+        [
+            ("1", None, "A&x2f;B", "A&x2f;B"),
+            ("2", "1",  "C", "A&x2f;B / C"),
+        ],
+        columns=["id", "parent_id", "lemma", "tree_path"]
+    )
 
-    # TODO: Compare to full expected output
+    pd.testing.assert_frame_equal(result, expected)
+
 
 
 # --- add_level --------------------------------------------------------------
 
 def test_add_level_2(example_tree2):
     leveled = tree.add_level(example_tree2, "id", "parent_id")
-    assert set(leveled["tree_level"].tolist()) == {0, 1}
 
-    # TODO: Compare to full expected output
+    expected = pd.DataFrame(
+        [
+            ("1", None, "Root", "1", 0, 0),
+            ("2", "1", "Child A", "1", 1, 1),
+            ("3", "1", "Child B", "1", 1, 2),
+        ],
+        columns=["id", "parent_id", "lemma", "tree_thread", "tree_level", "tree_order"],
+    )
+
+    pd.testing.assert_frame_equal(leveled, expected)
 
 
 def test_add_level_3(example_tree3):
     leveled = tree.add_level(example_tree3, "id", "parent_id")
-    levels = leveled.set_index("id")["tree_level"]
-    assert levels["r"] == 0
-    assert levels["a"] == 1
-    assert levels["a1"] == 2
+
+    expected = pd.DataFrame(
+        [
+            ("1", None, "A", "1", 0, 0),
+            ("6", None, "B", "6", 0, 0),
+            ("2", "1", "A1", "1", 1, 1),
+            ("3", "1", "A2", "1", 1, 2),
+            ("7", "6", "B1", "6", 1, 1),
+            ("4", "2", "A1-1", "1", 2, 1),
+            ("5", "2", "A1-2", "1", 2, 2),
+            ("8", "7", "B1-1", "6", 2, 1),
+        ],
+        columns=["id", "parent_id", "lemma", "tree_thread", "tree_level", "tree_order"],
+    )
+
+    pd.testing.assert_frame_equal(leveled, expected)
 
 # --- add_path ---------------------------------------------------------------
 
 def test_add_path_2(example_tree2):
     result = tree.add_path(example_tree2, "id", "parent_id", "lemma")
 
-    root_path = result.loc[result["id"] == "1", "tree_path"].iloc[0]
-    child_path = result.loc[result["id"] == "2", "tree_path"].iloc[0]
+    expected = pd.DataFrame(
+        [
+            ("1", None, "Root", "Root"),
+            ("2", "1", "Child A", "Root / Child A"),
+            ("3", "1", "Child B", "Root / Child B"),
+        ],
+        columns=["id", "parent_id", "lemma", "tree_path"],
+    )
 
-    assert root_path == "Root"
-    assert " / " in str(child_path)
-
-    # TODO: Compare to full expected output
+    pd.testing.assert_frame_equal(result, expected)
 
 
 def test_add_path_3(example_tree3):
     result = tree.add_path(example_tree3, "id", "parent_id", "lemma")
 
-    paths = result.set_index("id")["tree_path"]
-    assert paths["1"] == "A"
-    assert paths["2"] == "A / A1"
-    assert paths["4"] == "A / A1 / A1-1"
+    expected = pd.DataFrame(
+        [
+            ("1", None, "A", "A"),
+            ("2", "1", "A1", "A / A1"),
+            ("3", "1", "A2", "A / A2"),
+            ("4", "2", "A1-1", "A / A1 / A1-1"),
+            ("5", "2", "A1-2", "A / A1 / A1-2"),
+            ("6", None, "B", "B"),
+            ("7", "6", "B1", "B / B1"),
+            ("8", "7", "B1-1", "B / B1 / B1-1"),
+        ],
+        columns=["id", "parent_id", "lemma", "tree_path"],
+    )
 
-    # TODO: Compare to full expected output
+    pd.testing.assert_frame_equal(result, expected)
 
 def test_add_path_duplicates():
     data = pd.DataFrame(
@@ -76,11 +115,18 @@ def test_add_path_duplicates():
 
     result = tree.add_path(data, "id", "parent_id", "lemma")
 
-    # one output row per input row, not a cartesian product
-    assert len(result) == len(data)
+    expected = pd.DataFrame(
+        [
+            ("1", None, "Root", "Root"),
+            ("1", None, "Root", "Root"),
+            ("2", "1", "Child", "Root / Child"),
+            ("2", "1", "Child", "Root / Child"),
+        ],
+        columns=["id", "parent_id", "lemma", "tree_path"],
+    )
 
-    # TODO: Compare to full expected output
-    assert set(result["tree_path"].tolist()) == {"Root", "Root / Child"}
+    pd.testing.assert_frame_equal(result, expected)
+
 
 
 # --- stack_ancestors --------------------------------------------------------
@@ -88,21 +134,30 @@ def test_add_path_duplicates():
 def test_stack_ancestors(example_tree3):
     ancestors = tree.stack_ancestors(example_tree3, "id", "parent_id", "anc_id")
 
+    expected = pd.DataFrame(
+        [
+            ("1", "1"),
+            ("2", "2"),
+            ("3", "3"),
+            ("4", "4"),
+            ("5", "5"),
+            ("6", "6"),
+            ("7", "7"),
+            ("8", "8"),
+            ("2", "1"),
+            ("3", "1"),
+            ("4", "2"),
+            ("5", "2"),
+            ("7", "6"),
+            ("8", "7"),
+            ("4", "1"),
+            ("5", "1"),
+            ("8", "6"),
+        ],
+        columns=["id", "anc_id"],
+    )
 
-    assert len(ancestors) == 11
-
-    assert list(ancestors.columns) == ["id", "anc_id"]
-
-    pairs = set(zip(ancestors["id"], ancestors["anc_id"]))
-
-    # a1 descends from itself, a and r
-    assert ("a1", "a1") in pairs
-    assert ("a1", "a") in pairs
-    assert ("a1", "r") in pairs
-    # a root only has itself as ancestor
-    assert ("r", "r") in pairs
-
-    # TODO: Compare to full expected output
+    pd.testing.assert_frame_equal(ancestors, expected)
 
 
 
@@ -115,15 +170,16 @@ def test_add_ancestor_3(example_tree3):
 
     result = tree.add_ancestor(with_path, "id", "parent_id", "tree_path", level=1)
 
-    by_id = result.set_index("id")
-    assert by_id.loc["a1", "ancestor_id"] == "a"
-    assert by_id.loc["a1", "ancestor_path"] == "Root / A"
-    # the root has no level-1 ancestor and is dropped
-    assert "r" not in result["id"].tolist()
+    expected = pd.DataFrame(
+        [
+            ("2", "1", "A1", "A / A1", "keep-me", "2", "A / A1"),
+            ("3", "1", "A2", "A / A2", "keep-me", "3", "A / A2"),
+            ("4", "2", "A1-1", "A / A1 / A1-1", "keep-me", "2", "A / A1"),
+            ("5", "2", "A1-2", "A / A1 / A1-2", "keep-me", "2", "A / A1"),
+            ("7", "6", "B1", "B / B1", "keep-me", "7", "B / B1"),
+            ("8", "7", "B1-1", "B / B1 / B1-1", "keep-me", "7", "B / B1"),
+        ],
+        columns=["id", "parent_id", "lemma", "tree_path", "extra", "ancestor_id", "ancestor_path"],
+    )
 
-
-    assert "extra" in result.columns
-    assert "tree_path" in result.columns
-    assert set(result["extra"].tolist()) == {"keep-me"}
-
-    # TODO: Compare to full expected output
+    pd.testing.assert_frame_equal(result, expected)

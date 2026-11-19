@@ -66,9 +66,9 @@ def example_tree2():
 @pytest.fixture
 def example_tree3():
     """Three-level tree: root -> a,b -> a1,a2."""
-    columns = ["id", "parent_id", "lemma"]
 
-    rows = [
+
+    return pd.DataFrame([
         ("1", None, "A"),
         ("2", "1", "A1"),
         ("3", "1", "A2"),
@@ -77,9 +77,9 @@ def example_tree3():
         ("6", None, "B"),
         ("7", "6", "B1"),
         ("8", "7", "B1-1"),
-    ]
-
-    return pd.DataFrame(rows, columns=columns)
+    ],
+        columns=["id", "parent_id", "lemma"]
+    )
 
 
 @pytest.fixture
@@ -131,6 +131,8 @@ def example_properties():
         pd.DataFrame(items_rows, columns=items_cols),
         pd.DataFrame(links_rows, columns=links_cols),
     ], ignore_index=True)
+
+    return df
 
 
 @pytest.fixture
