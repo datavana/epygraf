@@ -303,6 +303,9 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
     """
     Get article annotations via links.
 
+    Note:  Only the path is leveled up. Thus, even if you use the level parameter,
+    to_id contains the original to_id, not the ancestor at the given level.
+
     :param df: A RAM DataFrame
     :param items_type: Item type of annotating items (``None`` means all)
     :param properties_type: Keep only links targeting this property type
