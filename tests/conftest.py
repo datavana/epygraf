@@ -3,6 +3,36 @@ import pytest
 
 
 @pytest.fixture
+def example_tree2():
+    """Two-level tree: root -> child1, child2."""
+    return pd.DataFrame({
+        "id": ["1", "2", "3"],
+        "parent_id": [None, "1", "1"],
+        "lemma": ["Root", "Child A", "Child B"],
+    })
+
+
+@pytest.fixture
+def example_tree3():
+    """Three-level tree: root -> a,b -> a1,a2."""
+
+
+    return pd.DataFrame([
+        ("1", None, "A"),
+        ("2", "1", "A1"),
+        ("3", "1", "A2"),
+        ("4", "2", "A1-1"),
+        ("5", "2", "A1-2"),
+        ("6", None, "B"),
+        ("7", "6", "B1"),
+        ("8", "7", "B1-1"),
+    ],
+        columns=["id", "parent_id", "lemma"]
+    )
+
+
+
+@pytest.fixture
 def example_article():
     """Minimal synthetic RAM-like DataFrame used across distill/base/tree tests."""
     return pd.DataFrame([
@@ -51,35 +81,6 @@ def example_article():
             "to_id": "properties-5",
         },
     ])
-
-
-@pytest.fixture
-def example_tree2():
-    """Two-level tree: root -> child1, child2."""
-    return pd.DataFrame({
-        "id": ["1", "2", "3"],
-        "parent_id": [None, "1", "1"],
-        "lemma": ["Root", "Child A", "Child B"],
-    })
-
-
-@pytest.fixture
-def example_tree3():
-    """Three-level tree: root -> a,b -> a1,a2."""
-
-
-    return pd.DataFrame([
-        ("1", None, "A"),
-        ("2", "1", "A1"),
-        ("3", "1", "A2"),
-        ("4", "2", "A1-1"),
-        ("5", "2", "A1-2"),
-        ("6", None, "B"),
-        ("7", "6", "B1"),
-        ("8", "7", "B1-1"),
-    ],
-        columns=["id", "parent_id", "lemma"]
-    )
 
 
 @pytest.fixture

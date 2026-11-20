@@ -425,11 +425,12 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
                         codings["items_id"] = codings["from_id"]
 
     final_cols = list(dict.fromkeys(
-        list(article_cols) + ["articles_id", "sections_id", "items_id",
-                               "from_tagid"] + list(cols) + ["to_id"]
+        list(article_cols) + ["articles_id", "sections_id", "items_id", "from_tagid"] + list(cols) + ["to_id"]
     ))
     codings = utils.add_missing_columns(codings, "to_id")
     final_cols = [c for c in final_cols if c in codings.columns]
+
+    #return codings.reset_index(drop=True)
     return codings[final_cols].reset_index(drop=True)
 
 def extract_segment(xml_str: str, tagid: str) -> str:
