@@ -5,6 +5,18 @@ import pytest
 from epygraf import distill
 
 
+def _plain(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise a frame so dtype/null-type differences between pandas
+    versions don't break ``assert_frame_equal``.
+
+    pandas 3.0 defaults to ``StringDtype`` (with ``pd.NA``) for string data,
+    whereas earlier versions use ``object`` (with ``np.nan``).  Casting to
+    ``object`` and collapsing every missing value to ``None`` makes the
+    comparison independent of both.
+    """
+    return df.astype(object).where(df.notna(), None)
+
+
 # --- articles ---------------------------------------------------------------
 
 def test_articles(example_article):
@@ -15,7 +27,7 @@ def test_articles(example_article):
         columns=["name",        "id",          "type",   "norm_iri"],
     )
 
-    pd.testing.assert_frame_equal(result, expected)
+    pd.testing.assert_frame_equal(_plain(result), _plain(expected))
 
 
 # --- items ------------------------------------------------------------------
@@ -30,7 +42,7 @@ def test_items(example_article):
         columns=["content", "properties.lemma", "id", "type", "norm_iri", "articles_id", "sections_id"],
     )
 
-    pd.testing.assert_frame_equal(result, expected)
+    pd.testing.assert_frame_equal(_plain(result), _plain(expected))
 
 
 # --- properties -------------------------------------------------------------
@@ -43,7 +55,7 @@ def test_properties(example_article):
         columns=["path", "id", "type", "norm_iri"],
     )
 
-    pd.testing.assert_frame_equal(result, expected)
+    pd.testing.assert_frame_equal(_plain(result), _plain(expected))
 
 
 def test_properties_levelup1(example_properties):
@@ -59,7 +71,7 @@ def test_properties_levelup1(example_properties):
         columns=["path", "id", "parent_id", "type", "norm_iri", "ancestor_id", "ancestor_path"],
     )
 
-    pd.testing.assert_frame_equal(result, expected)
+    pd.testing.assert_frame_equal(_plain(result), _plain(expected))
 
 
 def test_properties_annos(example_properties):
@@ -77,7 +89,7 @@ def test_properties_annos(example_properties):
         columns=["path", "id", "parent_id", "type", "norm_iri","articles_id", "sections_id", "items_id", "from_tagid","segment", "to_id"],
     )
 
-    pd.testing.assert_frame_equal(result, expected)
+    pd.testing.assert_frame_equal(_plain(result), _plain(expected))
 
 
 # --- links ------------------------------------------------------------------
@@ -92,7 +104,7 @@ def test_links(example_article):
         columns=["articles_id", "sections_id", "items_id", "from_tagid", "path", "segment", "to_id"],
     )
 
-    pd.testing.assert_frame_equal(result, expected)
+    pd.testing.assert_frame_equal(_plain(result), _plain(expected))
 
 
 def test_links_level0(example_properties):
@@ -109,7 +121,7 @@ def test_links_level0(example_properties):
         columns=["articles_id", "sections_id", "items_id", "from_tagid", "path", "segment", "to_id"],
     )
 
-    pd.testing.assert_frame_equal(result, expected)
+    pd.testing.assert_frame_equal(_plain(result), _plain(expected))
 
 
 def test_links_segment(example_properties):
@@ -123,7 +135,7 @@ def test_links_segment(example_properties):
         columns=["articles_id", "sections_id", "items_id", "from_tagid", "path", "segment", "to_id"],
     )
 
-    pd.testing.assert_frame_equal(result, expected)
+    pd.testing.assert_frame_equal(_plain(result), _plain(expected))
 
 
 # --- segment extraction -----------------------------------------------------
