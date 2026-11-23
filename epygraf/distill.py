@@ -10,6 +10,7 @@ import warnings
 import xml.etree.ElementTree as ET
 
 import pandas as pd
+from tqdm import tqdm
 
 from epygraf import base, utils
 from epygraf import tree as _tree
@@ -412,7 +413,12 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
                 # with one ElementTree parse per row, dominates the runtime.
                 segs["segment"] = [
                     extract_segment(c, t)
-                    for c, t in zip(segs["content"], segs["from_tagid"])
+                    for c, t in tqdm(
+                        zip(segs["content"], segs["from_tagid"]),
+                        total=len(segs),
+                        desc="Extracting segments",
+                        delay=1.0,
+                    )
                 ]
                 seg_keep = [c for c in
                             ["items_id", "sections_id", "articles_id",
