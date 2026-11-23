@@ -6,16 +6,15 @@ import pytest
 def example_tree2():
     """Two-level tree: root -> child1, child2."""
     return pd.DataFrame({
-        "id": ["1", "2", "3"],
+        "id":        ["1", "2", "3"],
         "parent_id": [None, "1", "1"],
-        "lemma": ["Root", "Child A", "Child B"],
+        "lemma":     ["Root", "Child A", "Child B"],
     })
 
 
 @pytest.fixture
 def example_tree3():
     """Three-level tree: root -> a,b -> a1,a2."""
-
 
     return pd.DataFrame([
         ("1", None, "A"),

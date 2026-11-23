@@ -163,8 +163,14 @@ def extract_long(df: pd.DataFrame, table: str, type=None,
         if "type" in out.columns:
             out = out[out["type"].isin(types)]
 
-    out = utils.drop_empty_columns(out.copy())
-    out = out.drop_duplicates()
+    # drop_empty_columns() already returns a fresh frame (dropna copies), so no
+    # need to .copy() first.
+    out = utils.drop_empty_columns(out)
+    # drop_duplicates() hashes every column (including large content columns),
+    # which is expensive and a no-op when ids are already unique. Only pay for
+    # it when there are actually duplicate ids.
+    if "id" not in out.columns or out["id"].duplicated().any():
+        out = out.drop_duplicates()
 
     # Convert ID columns to nullable integer type
     for col in out.columns:

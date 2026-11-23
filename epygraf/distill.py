@@ -360,7 +360,11 @@ def links(df: pd.DataFrame, items_type=None, properties_type=None,
     if level is None:
         codes_level = codes[["id", path_col]].copy().drop_duplicates()
         effective_level = int(codes["level"].max()) if "level" in codes.columns else 0
-        codings = codings.merge(codes_level, left_on="to_id", right_on="id", how="left")
+        # inner join: keep only links that actually target the requested
+        # property type. A left join kept every link (with a NaN path) and made
+        # the segment extraction below run over all links, not just the few
+        # that match.
+        codings = codings.merge(codes_level, left_on="to_id", right_on="id", how="inner")
     else:
         effective_level = level
         ancestors = _tree.stack_ancestors(
