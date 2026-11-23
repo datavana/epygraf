@@ -4,6 +4,9 @@ Functions for Epigraf data handling.
 """
 
 import re
+import uuid
+import weakref
+
 import pandas as pd
 
 from epygraf import utils
@@ -21,6 +24,27 @@ _TABLE_RE = "(" + "|".join(TABLES) + ")"
 _TYPE_RE = "([a-z0-9_-]+)"
 _FRAGMENT_RE = "([a-z0-9_~-]+)"
 _NUMBER_RE = "([0-9]+)"
+
+# Cache of extracted tables. Each DataFrame gets a unique token (stored in its
+# ``attrs``) that identifies its cache bucket here. The frames are kept out of
+# ``attrs`` because pandas' concat/merge compare attrs with ``==`` and a
+# DataFrame value would make that comparison ambiguous; a token string does not.
+_extract_cache = {}
+
+
+def _cache_token(df: pd.DataFrame) -> str:
+    """Return the extraction-cache token for *df*, creating it lazily.
+
+    The token is stored in ``df.attrs``, so copies of the frame (which share
+    ``attrs``) keep hitting the same cache bucket. The bucket is dropped once
+    the original frame is garbage collected.
+    """
+    token = df.attrs.get("_epi_extract")
+    if token is None:
+        token = uuid.uuid4().hex
+        df.attrs["_epi_extract"] = token
+        weakref.finalize(df, _extract_cache.pop, token, None)
+    return token
 
 # ---------------------------------------------------------------------------
 # IRI creation
@@ -147,6 +171,10 @@ def extract_long(df: pd.DataFrame, table: str, type=None,
 
     ID columns will always be converted to strings.
 
+    Results are cached per DataFrame so that repeated extractions of the same
+    table — e.g. ``distill.properties()`` requesting the items table several
+    times — don't rescan the whole RAM.
+
     :param df: A RAM DataFrame
     :param table: The table name
     :param type: Filter by type: a single value or a list of values
@@ -155,6 +183,12 @@ def extract_long(df: pd.DataFrame, table: str, type=None,
     """
     if df is None or df.empty or "table" not in df.columns:
         return pd.DataFrame()
+
+    token = _cache_token(df)
+    cache = _extract_cache.get(token)
+    key = (table, tuple(type) if isinstance(type, (list, tuple, set)) else type, prefix)
+    if cache is not None and key in cache:
+        return cache[key].copy()
 
     out = df[df["table"] == table]
 
@@ -180,7 +214,16 @@ def extract_long(df: pd.DataFrame, table: str, type=None,
     if prefix:
         out.columns = [f"{table}.{c}" for c in out.columns]
 
-    return out.reset_index(drop=True)
+    out = out.reset_index(drop=True)
+
+    # Cache the result per DataFrame so repeated extractions of the same table
+    # — e.g. distill.properties() requesting the items table several times —
+    # don't rescan the whole RAM.
+    if cache is None:
+        _extract_cache[token] = {}
+    _extract_cache[token][key] = out.copy()
+
+    return out
 
 
 # ---------------------------------------------------------------------------

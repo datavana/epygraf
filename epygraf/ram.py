@@ -1,9 +1,17 @@
 """
 RAM (Record Accumulation Model) helper functions.
 
-Mirrors ram.R from the R package.
 RAM rows are stored in ``df.attrs["epi"]["rows"]`` and can be compiled
 into a patch-ready DataFrame with compile().
+
+.. note::
+    The accumulated rows live in ``df.attrs`` (not in a module-level cache) so
+    that they serialize and travel with the frame. A side effect is that
+    ``pandas.concat``/``merge`` on two RAM-enhanced frames raises
+    ``ValueError: The truth value of a DataFrame is ambiguous``, because pandas
+    compares ``attrs`` with ``==`` and a DataFrame value makes that comparison
+    ambiguous. Don't ``concat`` RAM-enhanced frames directly — use
+    :func:`add` to accumulate rows instead.
 """
 
 import pandas as pd
