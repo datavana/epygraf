@@ -223,20 +223,26 @@ def properties(df: pd.DataFrame, type=None, cols=None,
             if not anno_items.empty and "id" in props.columns:
                 anno_items = props.merge(anno_items, left_on="id", right_on="property", how="inner")
                 anno_items = utils.drop_empty_columns(anno_items)
-                if not anno_items.empty:
-                    props = props[~props["id"].isin(anno_items["id"])]
 
         # --- links ---
         anno_links = links(df, properties_type=type, cols=["segment"], level=None)
         if not anno_links.empty and "to_id" in anno_links.columns and "id" in props.columns:
             anno_links = props.merge(anno_links, left_on="id", right_on="to_id", how="inner")
             anno_links = utils.drop_empty_columns(anno_links)
-            if not anno_links.empty:
-                props = props[~props["id"].isin(anno_links["id"])]
 
-        frames = [f for f in [props,
-                               anno_links if not anno_links.empty else None,
-                               anno_items if not anno_items.empty else None] if f is not None]
+        # Remove every property that carries at least one annotation.
+        annotated_ids = set()
+        if not anno_items.empty:
+            annotated_ids.update(anno_items["id"])
+        if not anno_links.empty:
+            annotated_ids.update(anno_links["id"])
+        props = props[~props["id"].isin(annotated_ids)]
+
+        frames = [f for f in [
+            props,
+            anno_links if not anno_links.empty else None,
+            anno_items if not anno_items.empty else None] if f is not None
+        ]
         props = pd.concat(frames, ignore_index=True)
 
     if levelup is not None:
