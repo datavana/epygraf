@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -75,18 +74,24 @@ def test_properties_levelup1(example_properties):
 
 
 def test_properties_annos(example_properties):
+    # properties-4 (A1) is referenced by an item (items-1.property) *and* by two
+    # links (links-1/links-2.to_id). annos=True must keep both the link
+    # annotations and the item annotation for that property, not drop one of
+    # them.
     result = distill.properties(example_properties, type="topics", annos=True)
 
     expected = pd.DataFrame(
         [
-            ("Root", "properties-1", pd.NA, "topics", "root", np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
-            ("Root / A", "properties-2", "properties-1", "topics", "a", np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
-            ("Root / B", "properties-3", "properties-1", "topics", "b", np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
-            ("Root / A / A2", "properties-5", "properties-2", "topics", "a2", np.nan, np.nan, np.nan, np.nan, np.nan, np.nan),
-            ("Root / A / A1", "properties-4", "properties-2", "topics", "a1", "articles-1", "sections-1", "items-1", "s1", "Anna", "properties-4"),
-            ("Root / A / A1", "properties-4", "properties-2", "topics", "a1", "articles-1", "sections-1", "items-2", "s1", "Bernd", "properties-4"),
+            ("Root", "properties-1", None, "topics", "root", None, None, None, None, None, None, None),
+            ("Root / A", "properties-2", "properties-1", "topics", "a", None, None, None, None, None, None, None),
+            ("Root / B", "properties-3", "properties-1", "topics", "b", None, None, None, None, None, None, None),
+            ("Root / A / A2", "properties-5", "properties-2", "topics", "a2", None, None, None, None, None, None, None),
+            ("Root / A / A1", "properties-4", "properties-2", "topics", "a1", "articles-1", "sections-1", "items-1", "s1", "Anna", "properties-4", None),
+            ("Root / A / A1", "properties-4", "properties-2", "topics", "a1", "articles-1", "sections-1", "items-2", "s1", "Bernd", "properties-4", None),
+            ("Root / A / A1", "properties-4", "properties-2", "topics", "a1", "articles-1", "sections-1", "items-1", None, None, None, "properties-4"),
         ],
-        columns=["path", "id", "parent_id", "type", "norm_iri","articles_id", "sections_id", "items_id", "from_tagid","segment", "to_id"],
+        columns=["path", "id", "parent_id", "type", "norm_iri", "articles_id", "sections_id",
+                 "items_id", "from_tagid", "segment", "to_id", "property"],
     )
 
     pd.testing.assert_frame_equal(_plain(result), _plain(expected))

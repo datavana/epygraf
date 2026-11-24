@@ -112,7 +112,10 @@ def example_properties():
     # ---------- items ----------
     items_cols = ["table", "type", "id", "articles_id", "sections_id", "property", "content"]
     items_rows = [
-        ("items", "text", "items-1", "articles-1", "sections-1", "properties-999", 'Hello <seg id="s1">Anna</seg>.'),
+        # items-1 references properties-4 (A1) as its primary property, which is
+        # *also* the target of links-1/links-2 below. This exercises the case
+        # where one property is both item-referenced and link-annotated.
+        ("items", "text", "items-1", "articles-1", "sections-1", "properties-4", 'Hello <seg id="s1">Anna</seg>.'),
         ("items", "text", "items-2", "articles-1", "sections-1", "properties-999", 'Hello <seg id="s1">Bernd</seg>.'),
     ]
 
